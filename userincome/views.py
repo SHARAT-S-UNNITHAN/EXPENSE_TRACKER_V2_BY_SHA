@@ -370,8 +370,8 @@ def generate_report(request):
             messages.error(request, "Start date cannot be greater than end date.")
             return redirect('report')
 
-        # incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-        # expenses = Expense.objects.filter(date__range=[start_date, end_date])
+        # incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+        # expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
 
         incomes = UserIncome.objects.filter(owner=user, date__range=[start_date, end_date])
         expenses = Expense.objects.filter(owner=user, date__range=[start_date, end_date])
@@ -401,8 +401,8 @@ def generate_report(request):
 def export_csv(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-    expenses = Expense.objects.filter(date__range=[start_date, end_date])
+    incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+    expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
     
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="report_{start_date}_to_{end_date}.csv'
@@ -442,8 +442,8 @@ def export_csv(request):
 def export_xlsx(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-    expenses = Expense.objects.filter(date__range=[start_date, end_date])
+    incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+    expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
     
     response = HttpResponse(content_type='application/ms-excel')
     response['Content-Disposition'] = f'attachment; filename="report_{start_date}_to_{end_date}.xlsx"'
