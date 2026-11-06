@@ -1,73 +1,84 @@
-# api/views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from pathlib import Path
+
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics.pairwise import cosine_similarity
-from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
-import nltk
-import json
-from rest_framework.permissions import IsAuthenticated 
-from .serializers import YourDataSerializer  
+from nltk.tokenize import word_tokenize
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
-nltk.download('punkt')
-nltk.download('stopwords')
+DATASET_PATH = Path(__file__).resolve().parent.parent / 'dataset.csv'
+
+
+def preprocess_text(value):
+    if not isinstance(value, str):
+        return ''
+    tokens = word_tokenize(value.lower())
+    stop_words = set(stopwords.words('english'))
+    tokens = [token for token in tokens if token.isalnum() and token not in stop_words]
+    return ' '.join(tokens)
 
 
 class PredictCategory(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user_input = request.data.get('description')
-        data = pd.read_csv(
-            'dataset.csv')
-        tfidf_vectorizer = TfidfVectorizer()
-        X = tfidf_vectorizer.fit_transform(data['clean_description'])
-        model = RandomForestClassifier()
-        model.fit(X, data['category'])
-        user_input = preprocess_text(user_input)
-        user_input_vector = tfidf_vectorizer.transform([user_input])
-        similarities = cosine_similarity(user_input_vector, X)
-        closest_match_index = similarities.argmax()
-        predicted_category = model.predict(X[closest_match_index])
+        description = request.data.get('description')
+        if not isinstance(description, str) or not description.strip() or len(description) > 500:
+            return Response(
+                {'detail': 'Provide a description between 1 and 500 characters.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        return Response({'predicted_category': predicted_category[0]}, status=status.HTTP_200_OK)
+        try:
+            data = pd.read_csv(DATASET_PATH)
+            if not {'clean_description', 'category'}.issubset(data.columns) or data.empty:
+                return Response({'detail': 'The category dataset is unavailable.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-
+            vectorizer = TfidfVectorizer()
+            features = vectorizer.fit_transform(data['clean_description'].fillna('').astype(str))
+            user_vector = vectorizer.transform([preprocess_text(description)])
+            similarities = cosine_similarity(user_vector, features)
+            closest_index = similarities.argmax()
+            predicted_category = data.iloc[closest_index]['category']
+            return Response({'predicted_category': str(predicted_category)}, status=status.HTTP_200_OK)
+        except (OSError, ValueError, KeyError) as exc:
+            return Response({'detail': 'Category prediction is temporarily unavailable.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class UpdateDataset(APIView):
-    # permission_classes = [IsAuthenticated]
+    # Dataset changes are administrative maintenance, never a public user action.
+    permission_classes = [IsAdminUser]
 
     def post(self, request):
-       new_data = request.data.get('new_data')
+        new_data = request.data.get('new_data')
+        if not isinstance(new_data, dict):
+            return Response({'detail': 'new_data must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
 
-       if 'description' in new_data and 'category' in new_data:
-            # Load your existing dataset
-            data = pd.read_csv('dataset.csv')  # Load the existing dataset
-            new_category = new_data['category']
-            new_description = new_data['description']
+        description = new_data.get('description')
+        category = new_data.get('category')
+        if not isinstance(description, str) or not description.strip() or len(description) > 500:
+            return Response({'detail': 'Description must contain 1 to 500 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(category, str) or not category.strip() or len(category) > 100:
+            return Response({'detail': 'Category must contain 1 to 100 characters.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Append the new data to the dataset
-            new_row = {'description': new_description, 'category': new_category, 'clean_description': preprocess_text(new_description)}
-            data = pd.concat([data, pd.DataFrame([new_row])], ignore_index=True)
-            # Save the updated dataset
-            data.to_csv('dataset.csv', index=False)
-            
-            tfidf_vectorizer = TfidfVectorizer()
+        try:
+            data = pd.read_csv(DATASET_PATH)
+            if not {'description', 'category', 'clean_description'}.issubset(data.columns):
+                return Response({'detail': 'Dataset schema is invalid.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            row = {
+                'description': description.strip(),
+                'category': category.strip(),
+                'clean_description': preprocess_text(description),
+            }
+            data = pd.concat([data, pd.DataFrame([row])], ignore_index=True)
+            data.to_csv(DATASET_PATH, index=False)
+        except (OSError, ValueError) as exc:
+            return Response({'detail': 'Dataset could not be updated.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Retrain the model with the updated dataset
-            X = tfidf_vectorizer.transform(data['clean_description'])
-            model.fit(X, data['category'])
-
-
-
-def preprocess_text(text):
-    stop_words = set(stopwords.words('english'))
-    tokens = word_tokenize(text.lower())
-    tokens = [t for t in tokens if t.isalnum() and t not in stop_words]
-    return ' '.join(tokens)
+        return Response({'detail': 'Dataset updated.'}, status=status.HTTP_200_OK)
