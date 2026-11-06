@@ -8,12 +8,13 @@ from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.utils.encoding import force_bytes, force_str, DjangoUnicodeDecodeError
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
 from .utils import account_activation_token
 from django.db import transaction
 from django.contrib import auth
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 # Create your views here.
 
 
@@ -54,21 +55,25 @@ class RegistrationView(View):
             with transaction.atomic():
                 if not User.objects.filter(username=username).exists():
                     if not User.objects.filter(email=email).exists():
-                        if len(password) < 6:
-                            messages.error(request, 'Password too short')
+                        try:
+                            validate_password(password)
+                        except ValidationError as validation_error:
+                            for error in validation_error.messages:
+                                messages.error(request, error)
                             return render(request, 'authentication/register.html', context)
+
                         user = User.objects.create_user(
-                            username=username, email=email)
-                        user.set_password(password)
-                        user.is_active = False
-                        user.save()
+                            username=username,
+                            email=email,
+                            password=password,
+                            is_active=False,
+                        )
                         email_subject = "Activate Your account"
                         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-                        domain = get_current_site(request).domain
                         link = reverse('activate', kwargs={
                             'uidb64': uidb64, 'token': account_activation_token.make_token(user)
                         })
-                        activate_url = 'http://'+domain+link
+                        activate_url = request.build_absolute_uri(link)
                         email_body = 'Hi ' + user.username + \
                             ' please use this link to verify your account\n'+activate_url
                         email = EmailMessage(
@@ -81,8 +86,8 @@ class RegistrationView(View):
                         messages.success(
                             request, 'Account created successfully. An email with activation link has been sent to your email.')
                     return render(request, 'authentication/register.html')
-        except Exception as e:
-            messages.error(request, "Error Occured : "+str(e))
+        except Exception:
+            messages.error(request, "We could not complete registration. Please try again.")
         return render(request, 'authentication/register.html', context)
 
 
@@ -133,10 +138,7 @@ class VerificationView(View):
 
 
 class LogoutView(View):
-    def get(self, request):
-        if request.user.is_authenticated:
-            auth.logout(request)
-            messages.success(request, "You have been logged out")
-            return redirect('login')
-        else:
-            return redirect('login')
+    def post(self, request):
+        auth.logout(request)
+        messages.success(request, "You have been logged out")
+        return redirect('login')

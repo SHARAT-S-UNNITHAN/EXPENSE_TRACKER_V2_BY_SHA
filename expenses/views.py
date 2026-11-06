@@ -1,5 +1,6 @@
-from django.shortcuts import render, redirect,HttpResponseRedirect
+from django.shortcuts import render, redirect, HttpResponseRedirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from .models import Category, Expense
 from django.contrib import messages
 from django.contrib.auth.models import User
@@ -121,15 +122,6 @@ def add_expense(request):
             messages.error(request, 'description is required')
             return render(request, 'expenses/add_expense.html', context)
         
-        initial_predicted_category = request.POST.get('initial_predicted_category')
-        if predicted_category != initial_predicted_category:
-            new_data = {
-            'description': description,
-            'category': predicted_category,
-        }
-
-        update_url = 'http://127.0.0.1:8000/api/update-dataset/'
-        response = requests.post(update_url, json={'new_data': new_data})
 
         try:
             date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -167,7 +159,7 @@ def add_expense(request):
 
 @login_required(login_url='/authentication/login')
 def expense_edit(request, id):
-    expense = Expense.objects.get(pk=id)
+    expense = get_object_or_404(Expense, pk=id, owner=request.user)
     categories = Category.objects.all()
     context = {
         'expense': expense,
@@ -227,8 +219,9 @@ def expense_edit(request, id):
         # return redirect('expenses')
 
 @login_required(login_url='/authentication/login')
+@require_POST
 def delete_expense(request, id):
-    expense = Expense.objects.get(pk=id)
+    expense = get_object_or_404(Expense, pk=id, owner=request.user)
     expense.delete()
     messages.success(request, 'Expense removed')
     return redirect('expenses')
@@ -278,6 +271,8 @@ def predict_category(description):
         return None
     
 
+@login_required(login_url='/authentication/login')
+@require_POST
 def set_expense_limit(request):
     if request.method == "POST":
         daily_expense_limit = request.POST.get('daily_expense_limit')

@@ -1,42 +1,44 @@
-from django.shortcuts import render,redirect,HttpResponseRedirect
-from .forms import User_Profile
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+from .forms import User_Profile
 from userincome.models import Source
-# Create your views here.
 
+
+@login_required(login_url='/authentication/login')
 def userprofile(request):
-    Sources=Source.objects.filter(owner=request.user)
-    if request.user.is_authenticated:
-        if request.method=="POST":
-            form=User_Profile(data=request.POST,instance=request.user)
-            if form.is_valid():
-                form.save()
-                messages.success(request,'Profile Updated Successfully!!')
-        else:
-            form=User_Profile(instance=request.user)
-        return render(request,'userprofile/profile.html',{'form':form,'sources':Sources})
+    sources = Source.objects.filter(owner=request.user)
+    if request.method == "POST":
+        form = User_Profile(data=request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Profile Updated Successfully!!')
     else:
-        messages.info(request,"You need to login first to view your profile")
-        return HttpResponseRedirect('/authentication/login/')
-    
-def addSource(request):
-    form=User_Profile(instance=request.user)
-    if request.method=="POST":
-        newSource=request.POST['Source']
-        if Source.objects.filter(name=newSource,owner=request.user).exists():
-            messages.warning(request,"Income source already Exists")
-            return HttpResponseRedirect('/account/')
-        if len(newSource)==0:
-            return HttpResponseRedirect('/account/')
-        newsourceadded=Source.objects.create(name=newSource, owner=request.user)
-        newsourceadded.save()
+        form = User_Profile(instance=request.user)
+    return render(request, 'userprofile/profile.html', {'form': form, 'sources': sources})
 
-        messages.success(request,'Source added successfully')
-        return HttpResponseRedirect('/account/')
-    
-def deleteSource(request,id):
-    obj=Source.objects.get(pk=id)
-    Source.delete(obj)
-    messages.success(request,"source deleted successfully")
-    return HttpResponseRedirect('/account/')
+
+@login_required(login_url='/authentication/login')
+@require_POST
+def addSource(request):
+    new_source = request.POST.get('Source', '').strip()
+    if not new_source:
+        messages.error(request, 'Income source cannot be empty.')
+    elif len(new_source) > 266:
+        messages.error(request, 'Income source is too long.')
+    elif Source.objects.filter(name=new_source, owner=request.user).exists():
+        messages.warning(request, 'Income source already exists.')
+    else:
+        Source.objects.create(name=new_source, owner=request.user)
+        messages.success(request, 'Source added successfully.')
+    return redirect('account')
+
+
+@login_required(login_url='/authentication/login')
+@require_POST
+def deleteSource(request, id):
+    source = get_object_or_404(Source, pk=id, owner=request.user)
+    source.delete()
+    messages.success(request, 'Source deleted successfully.')
+    return redirect('account')

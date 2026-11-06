@@ -3,12 +3,13 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 
 
-from django.shortcuts import render, redirect,HttpResponseRedirect
+from django.shortcuts import render, redirect, HttpResponseRedirect, get_object_or_404
 from .models import Source, UserIncome
 from django.core.paginator import Paginator
 from userpreferences.models import UserPreference
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 import json
 from django.http import JsonResponse
 import datetime
@@ -138,8 +139,8 @@ def add_income(request):
 
 @login_required(login_url='/authentication/login')
 def income_edit(request, id):
-    income = UserIncome.objects.get(pk=id)
-    sources = Source.objects.all()
+    income = get_object_or_404(UserIncome, pk=id, owner=request.user)
+    sources = Source.objects.filter(owner=request.user)
     context = {
         'income': income,
         'values': income,
@@ -195,8 +196,9 @@ def income_edit(request, id):
         # return redirect('income')
 
 @login_required(login_url='/authentication/login')
+@require_POST
 def delete_income(request, id):
-    income = UserIncome.objects.get(pk=id)
+    income = get_object_or_404(UserIncome, pk=id, owner=request.user)
     income.delete()
     messages.success(request, 'record removed')
     return redirect('income')
@@ -256,6 +258,7 @@ def income_summary(request):
 
 from datetime import datetime
 
+@login_required(login_url='/authentication/login')
 def monthly_income_data(request):
     # Get the current year
     current_year = datetime.now().year
@@ -266,7 +269,7 @@ def monthly_income_data(request):
     # Get the monthly income data for the current year, grouped by month
     monthly_data = (
         UserIncome.objects
-        .filter(date__year=current_year)  # Filter for the current year
+        .filter(owner=request.user, date__year=current_year)  # Filter for the current year
         .annotate(month=ExtractMonth('date'))
         .values('month')
         .annotate(total_income=Sum('amount'))
@@ -324,11 +327,12 @@ def render_to_pdf(template_path, context_dict):
     return HttpResponse("Error rendering PDF", status=400)
 
 
+@login_required(login_url='/authentication/login')
 def export_pdf(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-    expenses = Expense.objects.filter(date__range=[start_date, end_date])
+    incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+    expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
     
     total_income = incomes.aggregate(Sum('amount'))['amount__sum'] or 0
     total_expense = expenses.aggregate(Sum('amount'))['amount__sum'] or 0
@@ -353,6 +357,8 @@ def report(request):
     report_generated=False
     return render(request, 'income/report.html',{'report_generated':report_generated})
 
+@login_required(login_url='/authentication/login')
+@require_POST
 def generate_report(request):
     if request.method == "POST":
         start_date = request.POST.get('start_date')
@@ -364,8 +370,8 @@ def generate_report(request):
             messages.error(request, "Start date cannot be greater than end date.")
             return redirect('report')
 
-        # incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-        # expenses = Expense.objects.filter(date__range=[start_date, end_date])
+        # incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+        # expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
 
         incomes = UserIncome.objects.filter(owner=user, date__range=[start_date, end_date])
         expenses = Expense.objects.filter(owner=user, date__range=[start_date, end_date])
@@ -391,11 +397,12 @@ def generate_report(request):
         
         return render(request, 'income/report.html')
 
+@login_required(login_url='/authentication/login')
 def export_csv(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-    expenses = Expense.objects.filter(date__range=[start_date, end_date])
+    incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+    expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
     
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="report_{start_date}_to_{end_date}.csv'
@@ -431,11 +438,12 @@ def export_csv(request):
     
     return response
 
+@login_required(login_url='/authentication/login')
 def export_xlsx(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    incomes = UserIncome.objects.filter(date__range=[start_date, end_date])
-    expenses = Expense.objects.filter(date__range=[start_date, end_date])
+    incomes = UserIncome.objects.filter(owner=request.user, date__range=[start_date, end_date])
+    expenses = Expense.objects.filter(owner=request.user, date__range=[start_date, end_date])
     
     response = HttpResponse(content_type='application/ms-excel')
     response['Content-Disposition'] = f'attachment; filename="report_{start_date}_to_{end_date}.xlsx"'
