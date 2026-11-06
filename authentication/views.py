@@ -8,7 +8,6 @@ from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.utils.encoding import force_bytes, force_str, DjangoUnicodeDecodeError
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
 from .utils import account_activation_token
 from django.db import transaction
@@ -71,7 +70,6 @@ class RegistrationView(View):
                         )
                         email_subject = "Activate Your account"
                         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-                        domain = get_current_site(request).domain
                         link = reverse('activate', kwargs={
                             'uidb64': uidb64, 'token': account_activation_token.make_token(user)
                         })
