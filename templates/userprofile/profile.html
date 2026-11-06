@@ -102,7 +102,7 @@
         </form>
         <div>
             {% for source in sources %}
-            <li class="list">{{source}} <a href="{%url 'deleteSource' source.id%}"> Delete</a></li>
+            <li class="list">{{source}}<form action="{% url 'deleteSource' source.id %}" method="post" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-link p-0">Delete</button></form></li>
             {% endfor %}
         </div>
     </div>
